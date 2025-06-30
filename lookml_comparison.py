@@ -3,7 +3,7 @@
 """
 Skrypt do porównania i interaktywnego łączenia plików LookML View.
 Autor: Assistant
-Wersja: 3.4.1
+Wersja: 3.5.1
 Data: 2025-06-30
 """
 
@@ -93,7 +93,9 @@ def compare_lookml_folders(folder_old, folder_new):
             comparison_results[filename] = {
                 'changes': changes,
                 'old_elements_parsed': old_parsed,
-                'new_elements_parsed': new_parsed
+                'new_elements_parsed': new_parsed,
+                'old_path': old_path,
+                'new_path': new_path # Dodano new_path do comparison_results
             }
         except Exception as e:
             print(f"Błąd podczas porównywania pliku {filename}: {e}")
@@ -135,9 +137,18 @@ def setup_merge_directory(merge_folder_path, source_folder_path):
     shutil.copytree(source_path, merge_path)
     print(f"Skopiowano pliki z {source_path} do {merge_path}")
 
-def apply_change_to_file(target_file_path, change_type, element_name, old_element_data, new_element_data):
+def apply_change_to_file(target_file_path, change_type, element_name, old_element_data, new_element_data, original_old_path=None, original_new_path=None):
     """Aplikuje pojedynczą, zaakceptowaną przez użytkownika zmianę do pliku w folderze 'merge'."""
     try:
+        if change_type == 'plik_usuniete': # Cały plik usunięty (przywracamy)
+            shutil.copy(original_old_path, target_file_path)
+            print(f"  -> ZASTOSOWANO: Przywrócono plik {element_name} z wersji 'old'.")
+            return
+        elif change_type == 'plik_dodane': # Cały plik dodany (usuwamy)
+            os.remove(target_file_path)
+            print(f"  -> ZASTOSOWANO: Usunięto plik {element_name} z wersji 'new'.")
+            return
+
         with open(target_file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
@@ -190,8 +201,41 @@ def apply_change_to_file(target_file_path, change_type, element_name, old_elemen
     except Exception as e:
         print(f"  -> BŁĄD podczas zapisu zmiany dla '{element_name}': {e}")
 
-def _get_all_changes_as_list(comparison_results):
+def _get_all_changes_as_list(comparison_results, missing_in_new, missing_in_old):
     all_changes_list = []
+    
+    # Dodane/Usunięte pliki
+    for filename in sorted(missing_in_new):
+        all_changes_list.append({
+            'filename': filename,
+            'element_name': filename,
+            'element_type': 'plik',
+            'change_type': 'USUNIĘTE',
+            'attribute': 'cały plik',
+            'old_value': 'istniał',
+            'new_value': '-',
+            'raw_old_data': None, # Nie dotyczy
+            'raw_new_data': None, # Nie dotyczy
+            'action_type': 'plik_usuniete',
+            'original_old_path': Path("folder_old") / filename, # Ścieżka do oryginalnego pliku
+            'original_new_path': None
+        })
+    for filename in sorted(missing_in_old):
+        all_changes_list.append({
+            'filename': filename,
+            'element_name': filename,
+            'element_type': 'plik',
+            'change_type': 'DODANE',
+            'attribute': 'cały plik',
+            'old_value': '-',
+            'new_value': 'istnieje',
+            'raw_old_data': None,
+            'raw_new_data': None,
+            'action_type': 'plik_dodane',
+            'original_old_path': None,
+            'original_new_path': Path("folder_new") / filename # Ścieżka do oryginalnego pliku
+        })
+
     for filename, result in sorted(comparison_results.items()):
         old_elements_parsed = result['old_elements_parsed']
         new_elements_parsed = result['new_elements_parsed']
@@ -219,11 +263,12 @@ def _get_all_changes_as_list(comparison_results):
                     'action_type': 'zmienione_typ'
                 })
                 processed_elements.add(name)
-            # Krok 2: Dodane i usunięte elementy
-            for element_type, type_changes in changes.items():
-                singular_et = element_type[:-1]
+
+        # Krok 2: Dodane i usunięte elementy (wspólne pliki)
+        for element_type, type_changes in changes.items():
+            singular_et = element_type[:-1]
             for name, data in type_changes.get('dodane', {}).items():
-                if name not in processed_elements: continue
+                if name in processed_elements: continue
                 all_changes_list.append({
                     'filename': filename,
                     'element_name': name,
@@ -279,10 +324,10 @@ def _get_all_changes_as_list(comparison_results):
                         })
     return all_changes_list
 
-def interactive_merge_changes(comparison_results, merge_folder):
+def interactive_merge_changes(comparison_results, merge_folder, missing_in_new, missing_in_old):
     print("\nRozpoczynanie szczegółowego interaktywnego łączenia... (t/n)")
     
-    all_changes_to_process = _get_all_changes_as_list(comparison_results)
+    all_changes_to_process = _get_all_changes_as_list(comparison_results, missing_in_new, missing_in_old)
 
     for change_info in all_changes_to_process:
         filename = change_info['filename']
@@ -295,6 +340,8 @@ def interactive_merge_changes(comparison_results, merge_folder):
         raw_old_data = change_info['raw_old_data']
         raw_new_data = change_info['raw_new_data']
         action_type = change_info['action_type']
+        original_old_path = change_info.get('original_old_path')
+        original_new_path = change_info.get('original_new_path')
 
         print(f"\n--- Plik: {filename} ---")
         print(f"Element: {element_name} ({element_type})")
@@ -305,18 +352,18 @@ def interactive_merge_changes(comparison_results, merge_folder):
 
         decision = input("  Czy chcesz cofnąć tę zmianę (przywrócić starą wersję)? (t/n): ").lower().strip()
         if decision == 't':
-            apply_change_to_file(Path(merge_folder) / filename, action_type, element_name, raw_old_data, raw_new_data)
+            apply_change_to_file(Path(merge_folder) / filename, action_type, element_name, raw_old_data, raw_new_data, original_old_path, original_new_path)
         else:
             print("  -> POMINIĘTO.")
 
 def run_interactive_comparison_and_merge(folder_old, folder_new, folder_merge):
     print("🚀 URUCHAMIANIE PORÓWNANIA I INTERAKTYWNEGO ŁĄCZENIA")
-    comparison_results, _, _ = compare_lookml_folders(folder_old, folder_new)
-    if not any(r['changes'] for r in comparison_results.values()):
-        print("\n✅ Brak zmian do scalenia.")
+    comparison_results, missing_in_new, missing_in_old = compare_lookml_folders(folder_old, folder_new)
+    if not comparison_results and not missing_in_new and not missing_in_old:
+        print("\n✅ Brak zmian do scalenia. Foldery są zgodne.")
         return
     setup_merge_directory(folder_merge, folder_new)
-    interactive_merge_changes(comparison_results, folder_merge)
+    interactive_merge_changes(comparison_results, folder_merge, missing_in_new, missing_in_old)
     print("\n\n✅ PROCES ŁĄCZENIA ZAKOŃCZONY!")
 
 # --- Funkcje raportujące (logika z v2.6.0) ---
