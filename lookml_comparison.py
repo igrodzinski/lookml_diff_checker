@@ -219,9 +219,11 @@ def _get_all_changes_as_list(comparison_results):
                     'action_type': 'zmienione_typ'
                 })
                 processed_elements.add(name)
-
+            # Krok 2: Dodane i usunięte elementy
+            for element_type, type_changes in changes.items():
+                singular_et = element_type[:-1]
             for name, data in type_changes.get('dodane', {}).items():
-                if name in processed_elements: continue
+                if name not in processed_elements: continue
                 all_changes_list.append({
                     'filename': filename,
                     'element_name': name,
@@ -405,7 +407,14 @@ def generate_html_table_report(comparison_results, missing_in_new, missing_in_ol
     <h2>Files Missing in New Folder</h2><ul>{missing_new}</ul><h2>New Files in New Folder</h2><ul>{missing_old}</ul></body></html>
     """.format(
         th="".join([f"<th>{h}</th>" for h in headers]),
-        tbody="".join([f"<tr>{' '.join([f'<td class="long-text" title="{html.escape(str(c))}">{html.escape(str(c))}</td>' for c in r])}</tr>" for r in sorted(rows, key=lambda x: (x[0], x[1]))]),        missing_new="".join([f"<li>{f}</li>" for f in sorted(missing_in_new)]),
+        tbody = "".join([
+            "<tr>" + " ".join([
+            f'<td class="long-text" title="{html.escape(str(c))}">{html.escape(str(c))}</td>'
+            for c in r
+            ]) + "</tr>"
+            for r in sorted(rows, key=lambda x: (x[0], x[1]))
+        ]),
+        missing_new="".join([f"<li>{f}</li>" for f in sorted(missing_in_new)]),
         missing_old="".join([f"<li>{f}</li>" for f in sorted(missing_in_old)])
     )
     with open(output_file, "w", encoding="utf-8") as f:
