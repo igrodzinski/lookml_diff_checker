@@ -30,7 +30,8 @@ def parse_lookml_file(file_path):
         'dimension_groups': {},
         'sets': {},
         'drills': {},
-        'filters': {}
+        'filters': {},
+        'parameters': {}
     }
 
     patterns = {
@@ -39,7 +40,8 @@ def parse_lookml_file(file_path):
         'dimension_group': r'(dimension_group:\s*(\w+)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\})',
         'set': r'(set:\s*(\w+)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\})',
         'drill': r'(drill:\s*(\w+)\s*\{([\s\S]*?)\})',
-        'filter': r'(filter:\s*(\w+)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\})'
+        'filter': r'(filter:\s*(\w+)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\})',
+        'parameter': r'(parameter:\s*(\w+)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\})'
     }
 
     for element_type, pattern in patterns.items():
@@ -112,7 +114,7 @@ def compare_files(old_file_path, new_file_path, include_elements=None, exclude_e
     old_elements = parse_lookml_file(old_file_path)
     new_elements = parse_lookml_file(new_file_path)
     all_changes = {}
-    element_types_to_compare = ['dimensions', 'measures', 'dimension_groups', 'sets', 'drills', 'filters']
+    element_types_to_compare = ['dimensions', 'measures', 'dimension_groups', 'sets', 'drills', 'filters', 'parameters']
 
     if include_types:
         element_types_to_compare = [t for t in element_types_to_compare if t in include_types or t[:-1] in include_types]
