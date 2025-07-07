@@ -29,7 +29,8 @@ def parse_lookml_file(file_path):
         'measures': {},
         'dimension_groups': {},
         'sets': {},
-        'drills': {}
+        'drills': {},
+        'filters': {}
     }
 
     patterns = {
@@ -37,7 +38,8 @@ def parse_lookml_file(file_path):
         'measure': r'(measure:\s*(\w+)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\})',
         'dimension_group': r'(dimension_group:\s*(\w+)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\})',
         'set': r'(set:\s*(\w+)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\})',
-        'drill': r'(drill:\s*(\w+)\s*\{([\s\S]*?)\})'
+        'drill': r'(drill:\s*(\w+)\s*\{([\s\S]*?)\})',
+        'filter': r'(filter:\s*(\w+)\s*\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\})'
     }
 
     for element_type, pattern in patterns.items():
@@ -66,7 +68,8 @@ def extract_properties(body):
         'value_format': r'value_format:\s*"([^"]*)"',
         'drill_fields': r'drill_fields:\s*\[([^\]]*)\]',
         'fields': r'fields:\s*\[([^\]]*)\]',
-        'url': r'url:\s*"([^"]*)"'
+        'url': r'url:\s*"([^"]*)"',
+        'default_value': r'default_value:\s*"([^"]*)"'
     }
     for prop_name, pattern in property_patterns.items():
         match = re.search(pattern, body, re.DOTALL)
@@ -109,7 +112,7 @@ def compare_files(old_file_path, new_file_path, include_elements=None, exclude_e
     old_elements = parse_lookml_file(old_file_path)
     new_elements = parse_lookml_file(new_file_path)
     all_changes = {}
-    element_types_to_compare = ['dimensions', 'measures', 'dimension_groups', 'sets', 'drills']
+    element_types_to_compare = ['dimensions', 'measures', 'dimension_groups', 'sets', 'drills', 'filters']
 
     if include_types:
         element_types_to_compare = [t for t in element_types_to_compare if t in include_types or t[:-1] in include_types]
