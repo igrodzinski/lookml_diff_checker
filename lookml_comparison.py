@@ -81,7 +81,7 @@ def get_lookml_files(folder_path):
         return {}
     return {f.name: f for f in folder.glob("*.view.lkml")}
 
-def compare_lookml_folders(folder_old, folder_new):
+def compare_lookml_folders(folder_old, folder_new, include_elements=None, exclude_elements=None, include_types=None, exclude_types=None):
     old_files, new_files = get_lookml_files(folder_old), get_lookml_files(folder_new)
     comparison_results = {}
     common_files = set(old_files.keys()) & set(new_files.keys())
@@ -89,14 +89,15 @@ def compare_lookml_folders(folder_old, folder_new):
     for filename in sorted(common_files):
         old_path, new_path = old_files[filename], new_files[filename]
         try:
-            old_parsed, new_parsed, changes = compare_files(old_path, new_path)
-            comparison_results[filename] = {
-                'changes': changes,
-                'old_elements_parsed': old_parsed,
-                'new_elements_parsed': new_parsed,
-                'old_path': old_path,
-                'new_path': new_path # Dodano new_path do comparison_results
-            }
+            old_parsed, new_parsed, changes = compare_files(old_path, new_path, include_elements, exclude_elements, include_types, exclude_types)
+            if changes:
+                comparison_results[filename] = {
+                    'changes': changes,
+                    'old_elements_parsed': old_parsed,
+                    'new_elements_parsed': new_parsed,
+                    'old_path': old_path,
+                    'new_path': new_path
+                }
         except Exception as e:
             print(f"Błąd podczas porównywania pliku {filename}: {e}")
 
@@ -104,20 +105,35 @@ def compare_lookml_folders(folder_old, folder_new):
     missing_in_old = set(new_files.keys()) - set(old_files.keys())
     return comparison_results, missing_in_new, missing_in_old
 
-def compare_files(old_file_path, new_file_path):
+def compare_files(old_file_path, new_file_path, include_elements=None, exclude_elements=None, include_types=None, exclude_types=None):
     old_elements = parse_lookml_file(old_file_path)
     new_elements = parse_lookml_file(new_file_path)
     all_changes = {}
-    for element_type in ['dimensions', 'measures', 'dimension_groups', 'sets', 'drills']:
-        changes = compare_elements(old_elements, new_elements, element_type)
+    element_types_to_compare = ['dimensions', 'measures', 'dimension_groups', 'sets', 'drills']
+
+    if include_types:
+        element_types_to_compare = [t for t in element_types_to_compare if t in include_types or t[:-1] in include_types]
+    if exclude_types:
+        element_types_to_compare = [t for t in element_types_to_compare if t not in exclude_types and t[:-1] not in exclude_types]
+
+    for element_type in element_types_to_compare:
+        changes = compare_elements(old_elements, new_elements, element_type, include_elements, exclude_elements)
         if any(changes.values()):
             all_changes[element_type] = changes
     return old_elements, new_elements, all_changes
 
-def compare_elements(old_elements, new_elements, element_type):
+def compare_elements(old_elements, new_elements, element_type, include_elements=None, exclude_elements=None):
     changes = {'dodane': {}, 'usuniete': {}, 'zmienione': {}}
     old_names = set(old_elements.get(element_type, {}).keys())
     new_names = set(new_elements.get(element_type, {}).keys())
+
+    # Apply filtering
+    if include_elements:
+        old_names &= set(include_elements)
+        new_names &= set(include_elements)
+    if exclude_elements:
+        old_names -= set(exclude_elements)
+        new_names -= set(exclude_elements)
 
     for name in new_names - old_names:
         changes['dodane'][name] = new_elements[element_type][name]
@@ -356,11 +372,11 @@ def interactive_merge_changes(comparison_results, merge_folder, missing_in_new, 
         else:
             print("  -> POMINIĘTO.")
 
-def run_interactive_comparison_and_merge(folder_old, folder_new, folder_merge):
+def run_interactive_comparison_and_merge(folder_old, folder_new, folder_merge, include_elements=None, exclude_elements=None, include_types=None, exclude_types=None):
     print("🚀 URUCHAMIANIE PORÓWNANIA I INTERAKTYWNEGO ŁĄCZENIA")
-    comparison_results, missing_in_new, missing_in_old = compare_lookml_folders(folder_old, folder_new)
+    comparison_results, missing_in_new, missing_in_old = compare_lookml_folders(folder_old, folder_new, include_elements, exclude_elements, include_types, exclude_types)
     if not comparison_results and not missing_in_new and not missing_in_old:
-        print("\n✅ Brak zmian do scalenia. Foldery są zgodne.")
+        print("\n✅ Brak (pasujących do filtra) zmian do scalenia. Foldery są zgodne.")
         return
     setup_merge_directory(folder_merge, folder_new)
     interactive_merge_changes(comparison_results, folder_merge, missing_in_new, missing_in_old)
@@ -468,10 +484,14 @@ def generate_html_table_report(comparison_results, missing_in_new, missing_in_ol
         f.write(html_content)
     print(f"Wygenerowano raport HTML: {output_file}")
 
-def run_complete_comparison(folder_old, folder_new, html_table=False):
+def run_complete_comparison(folder_old, folder_new, html_table=False, include_elements=None, exclude_elements=None, include_types=None, exclude_types=None):
     print("🚀 URUCHAMIANIE PORÓWNANIA LOOKML (STYL v2.6.0)")
-    comparison_results, missing_in_new, missing_in_old = compare_lookml_folders(folder_old, folder_new)
+    comparison_results, missing_in_new, missing_in_old = compare_lookml_folders(folder_old, folder_new, include_elements, exclude_elements, include_types, exclude_types)
     
+    if not comparison_results and not missing_in_new and not missing_in_old:
+        print("\n✅ Brak (pasujących do filtra) zmian do wyświetlenia.")
+        return
+
     legacy_results = _transform_results_for_legacy_reporting(comparison_results)
     
     generate_consolidated_report(legacy_results, missing_in_new, missing_in_old)
@@ -483,4 +503,26 @@ if __name__ == "__main__":
     folder_old = current_dir / "folder_old"
     folder_new = current_dir / "folder_new"
     folder_merge = current_dir / "merge"
+
+    # Przykładowe użycie z filtrowaniem:
+    # Wyklucz elementy o nazwie 'id' i 'order_id'
+    # Uwzględnij tylko wymiary i miary
+    # run_interactive_comparison_and_merge(
+    #     folder_old, 
+    #     folder_new, 
+    #     folder_merge,
+    #     exclude_elements=['id', 'order_id'],
+    #     include_types=['dimension', 'measure']
+    # )
+
+    # Domyślne uruchomienie bez filtrowania
     run_interactive_comparison_and_merge(folder_old, folder_new, folder_merge)
+
+    # Przykład użycia raportu z filtrowaniem:
+    # run_complete_comparison(
+    #     folder_old,
+    #     folder_new,
+    #     html_table=True,
+    #     exclude_elements=['id', 'order_id'],
+    #     include_types=['dimension']
+    # )
